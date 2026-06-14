@@ -97,6 +97,12 @@ jobs:
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      # 6. Cài đặt Provisioning Profile (.mobileprovision)
+      - name: Install Provisioning Profile
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp source/CutCut_Prod.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/3ae93c16-bb7d-470f-86e3-73d66cce07c1.mobileprovision
+
       # 6. Cài đặt Ruby và Bundler
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
