@@ -1,0 +1,168 @@
+name: Deploy to TestFlight (Public Builder)
+
+on:
+  workflow_dispatch:
+    inputs:
+      committer_name:
+        description: "Người kích hoạt build"
+        required: true
+        default: "nguyenphp"
+  push:
+    tags:
+      - 'v*' # Tự động chạy khi bạn push tag dạng v1.0.0, v1.0.1...
+
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  TELEGRAM_TOPIC_ID: 2 # Gửi tin nhắn vào Topic ID = 2
+
+jobs:
+  deploy:
+    name: Build & Deploy iOS App
+    runs-on: macos-14 # Chạy trên macOS runner của GitHub (chứa sẵn Xcode 15)
+
+    steps:
+      # 1. Capture thời gian bắt đầu
+      - name: Capture Job Start Time
+        run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
+
+      # 2. Checkout mã nguồn từ repo Private
+      - name: Checkout Private Source Code
+        uses: actions/checkout@v4
+        with:
+          repository: nguyenphp/vibecut # Đường dẫn repo Private chứa code iOS của bạn
+          token: ${{ secrets.PRIVATE_REPO_PAT }} # Personal Access Token để tải repo Private
+          path: source # Tải source code vào thư mục con 'source'
+          fetch-depth: 10 # Lấy các commit gần nhất để tạo changelog
+
+      # 3. Lấy thông tin người kích hoạt build và danh sách commit
+      - name: Get Build Information
+        id: info
+        run: |
+          # Xác định người bấm build hoặc người push tag
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BUILDER="${{ github.event.inputs.committer_name }}"
+          else
+            BUILDER="${{ github.actor }}"
+          fi
+          echo "builder=$BUILDER" >> $GITHUB_OUTPUT
+
+          # Lấy danh sách 5 commit gần nhất trong repo private
+          cd source
+          COMMITS=$(git log -n 5 --pretty=format:"- %s" || echo "- Cập nhật hệ thống.")
+          
+          # Định dạng lại chuỗi để truyền vào output an toàn
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS"
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # 4. Gửi thông báo bắt đầu build về Telegram Topic 2
+      - name: Send Build Started Notification
+        run: |
+          # Chuẩn bị nội dung tin nhắn
+          MSG="🎬 *Bắt đầu build CutCut App*
+          
+          - Người ấn build 👨‍💻: ${{ steps.info.outputs.builder }}
+          - Nhánh/Tag 📌: ${{ github.ref_name }}
+          
+          📝 *Thay đổi gần đây:*
+          ${{ steps.info.outputs.commits }}"
+          
+          # Gọi API gửi tin nhắn
+          curl -s -X POST https://api.telegram.org/bot${{ env.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ env.TELEGRAM_CHAT_ID }} \
+            -d message_thread_id=${{ env.TELEGRAM_TOPIC_ID }} \
+            -d text="$MSG" \
+            -d parse_mode="Markdown"
+
+      # 5. Cài đặt chứng chỉ Apple Certificate (.p12)
+      - name: Install Apple Certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          # Giải mã chứng chỉ .p12 từ secrets
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+
+          # Tạo keychain tạm thời
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import chứng chỉ
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      # 6. Cài đặt Ruby và Bundler
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: source/ios/VibeCut
+
+      # 7. Chạy Fastlane để tự động hóa build và upload lên TestFlight
+      - name: Build & Push to TestFlight via Fastlane
+        working-directory: source/ios/VibeCut
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+        run: |
+          bundle exec fastlane beta
+
+      # 8. Tính toán kết quả build và dung lượng file .ipa
+      - name: Calculate Build Stats
+        if: always()
+        id: stats
+        run: |
+          # Tính thời gian chạy
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - JOB_START_TIME))
+          MINUTES=$((DURATION / 60))
+          SECONDS=$((DURATION % 60))
+          echo "duration=${MINUTES}m ${SECONDS}s" >> $GITHUB_OUTPUT
+
+          # Lấy kích thước file .ipa nếu build thành công
+          IPA_PATH=$(find source/ios/VibeCut -name "*.ipa" | head -n 1)
+          if [ -f "$IPA_PATH" ]; then
+            SIZE=$(du -sh "$IPA_PATH" | cut -f1)
+            echo "size=$SIZE" >> $GITHUB_OUTPUT
+          else
+            echo "size=N/A" >> $GITHUB_OUTPUT
+          fi
+
+      # 9. Gửi thông báo kết quả cuối cùng về Telegram Topic 2
+      - name: Send Telegram Final Notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          if [ "$STATUS" = "success" ]; then
+            MSG="✅ *Build thành công rồi hàng đã có trên TestFlight!*
+            
+            🌍 *Ứng dụng:* CutCut App
+            📌 *Phiên bản:* ${{ github.ref_name }}
+            🕐 *Thời gian build:* ${{ steps.stats.outputs.duration }}
+            📦 *Dung lượng file:* ${{ steps.stats.outputs.size }}
+            👨‍💻 *Người kích hoạt:* ${{ steps.info.outputs.builder }}
+            
+            🎉 Tải ứng dụng TestFlight trên điện thoại và tận hưởng thôi!"
+          else
+            MSG="❌ *Build thất bại rồi bạn hiền!*
+            
+            ⚠️ Tiến trình đóng gói hoặc tải lên TestFlight đã bị lỗi.
+            👨‍💻 *Người kích hoạt:* ${{ steps.info.outputs.builder }}
+            🔗 *Xem chi tiết lỗi tại đây:* $RUN_URL"
+          fi
+          
+          curl -s -X POST https://api.telegram.org/bot${{ env.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ env.TELEGRAM_CHAT_ID }} \
+            -d message_thread_id=${{ env.TELEGRAM_TOPIC_ID }} \
+            -d text="$MSG" \
+            -d parse_mode="Markdown"
