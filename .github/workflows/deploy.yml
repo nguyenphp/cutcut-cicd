@@ -25,6 +25,10 @@ jobs:
       # 1. Capture thời gian bắt đầu
       - name: Capture Job Start Time
         run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
+        
+      - name: List Xcode versions
+        run: |
+          ls -d /Applications/Xcode* || true
 
       # 2. Checkout mã nguồn từ repo Private
       - name: Checkout Private Source Code
