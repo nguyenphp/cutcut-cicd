@@ -26,9 +26,10 @@ jobs:
       - name: Capture Job Start Time
         run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
         
-      - name: List Xcode versions
+      - name: Select Xcode Version
         run: |
-          ls -d /Applications/Xcode* || true
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
 
       # 2. Checkout mã nguồn từ repo Private
       - name: Checkout Private Source Code
