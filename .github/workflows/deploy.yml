@@ -19,7 +19,7 @@ env:
 jobs:
   deploy:
     name: Build & Deploy iOS App
-    runs-on: macos-14 # Chạy trên macOS runner của GitHub (chứa sẵn Xcode 15)
+    runs-on: macos-latest # Chạy trên macOS runner của GitHub (chứa sẵn Xcode 26 / iOS 26 SDK)
 
     steps:
       # 1. Capture thời gian bắt đầu
