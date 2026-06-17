@@ -1,12 +1,7 @@
 name: Deploy to TestFlight (Public Builder)
 
 on:
-  workflow_dispatch:
-    inputs:
-      committer_name:
-        description: "Người kích hoạt build"
-        required: true
-        default: "nguyenphp"
+  workflow_dispatch: # Bấm Run workflow trên GitHub — người bấm lấy tự động từ github.actor
   push:
     tags:
       - 'v*' # Tự động chạy khi bạn push tag dạng v1.0.0, v1.0.1...
@@ -15,6 +10,8 @@ env:
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   TELEGRAM_TOPIC_ID: 2 # Gửi tin nhắn vào Topic ID = 2
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  GROQ_MODEL: llama-3.3-70b-versatile
 
 jobs:
   deploy:
@@ -25,62 +22,115 @@ jobs:
       # 1. Capture thời gian bắt đầu
       - name: Capture Job Start Time
         run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
-        
+
       - name: Select Xcode Version
         run: |
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
 
-      # 2. Checkout mã nguồn từ repo Private
+      # 2. Checkout mã nguồn từ repo Private (full history + tags để tạo changelog)
       - name: Checkout Private Source Code
         uses: actions/checkout@v4
         with:
           repository: nguyenphp/vibecut # Đường dẫn repo Private chứa code iOS của bạn
           token: ${{ secrets.PRIVATE_REPO_PAT }} # Personal Access Token để tải repo Private
           path: source # Tải source code vào thư mục con 'source'
-          fetch-depth: 10 # Lấy các commit gần nhất để tạo changelog
+          fetch-depth: 0 # Lấy TOÀN BỘ history + tag để gom commit kể từ tag gần nhất
 
-      # 3. Lấy thông tin người kích hoạt build và danh sách commit
+      # 3. Lấy người kích hoạt build + gom commit kể từ tag gần nhất
       - name: Get Build Information
         id: info
         run: |
-          # Xác định người bấm build hoặc người push tag
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BUILDER="${{ github.event.inputs.committer_name }}"
-          else
-            BUILDER="${{ github.actor }}"
-          fi
+          # Người bấm build / push tag: luôn lấy tự động từ GitHub
+          BUILDER="${{ github.actor }}"
           echo "builder=$BUILDER" >> $GITHUB_OUTPUT
 
-          # Lấy danh sách 5 commit gần nhất trong repo private
           cd source
-          COMMITS=$(git log -n 5 --pretty=format:"- %s" || echo "- Cập nhật hệ thống.")
-          
-          # Định dạng lại chuỗi để truyền vào output an toàn
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS"
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Xác định khoảng commit kể từ tag gần nhất
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            CURRENT="${{ github.ref_name }}"
+            PREV=$(git describe --tags --abbrev=0 "${CURRENT}^" 2>/dev/null || echo "")
+            if [[ -n "$PREV" ]]; then RANGE="$PREV..$CURRENT"; else RANGE="$CURRENT"; fi
+          else
+            PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [[ -n "$PREV" ]]; then RANGE="$PREV..HEAD"; else RANGE="HEAD"; fi
+          fi
+          echo "📌 Range: $RANGE (prev tag: ${PREV:-none})"
 
-      # 4. Gửi thông báo bắt đầu build về Telegram Topic 2
-      - name: Send Build Started Notification
+          COMMITS_ALL=$(git log $RANGE --no-merges --pretty=format:"- %s" 2>/dev/null || echo "")
+          if [[ -z "$COMMITS_ALL" ]]; then COMMITS_ALL="- Cập nhật hệ thống."; fi
+          COUNT=$(printf '%s\n' "$COMMITS_ALL" | grep -c '^- ' || echo 0)
+          COMMITS=$(printf '%s\n' "$COMMITS_ALL" | head -n 80)
+
+          echo "prev_tag=${PREV:-}" >> $GITHUB_OUTPUT
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          {
+            echo "commits<<EOF"
+            echo "$COMMITS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      # 4. Nhờ Groq tổng hợp release notes + đặt tên build (mood)
+      - name: Generate Release Notes & Mood (Groq)
+        id: notes
+        env:
+          COMMITS: ${{ steps.info.outputs.commits }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          # Chuẩn bị nội dung tin nhắn
-          MSG="🎬 *Bắt đầu build CutCut App*
-          
-          - Người ấn build 👨‍💻: ${{ steps.info.outputs.builder }}
-          - Nhánh/Tag 📌: ${{ github.ref_name }}
-          
-          📝 *Thay đổi gần đây:*
-          ${{ steps.info.outputs.commits }}"
-          
-          # Gọi API gửi tin nhắn
-          curl -s -X POST https://api.telegram.org/bot${{ env.TELEGRAM_BOT_TOKEN }}/sendMessage \
-            -d chat_id=${{ env.TELEGRAM_CHAT_ID }} \
-            -d message_thread_id=${{ env.TELEGRAM_TOPIC_ID }} \
-            -d text="$MSG" \
+          call_groq() {
+            local prompt=$1 payload response
+            payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.7}')
+            response=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+              -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
+            if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
+              echo "$response" | jq -r '.choices[0].message.content'
+            else
+              echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)"
+              return 1
+            fi
+          }
+
+          # Release notes
+          PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); nếu có mã task (VD US-1234) để đầu dòng; tập trung thay đổi chính; tối đa 10 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
+          NOTES=$(call_groq "$PROMPT") || NOTES="- Cập nhật hệ thống và cải tiến hiệu năng."
+          NOTES=$(echo "$NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+          # Build mood (tên build)
+          MOOD_PROMPT="Dựa trên danh sách thay đổi sau, đặt một tên tóm tắt nội dung chính chuyên nghiệp bằng tiếng Việt cho bản build CutCut này kèm emoji phù hợp (VD: 'Nâng cấp Auto Cut & Tối ưu xuất video 🚀'). Chỉ trả về duy nhất cái tên, tối đa 60 ký tự, không kèm mã task.\n\nDanh sách thay đổi:\n$COMMITS"
+          MOOD=$(call_groq "$MOOD_PROMPT") || MOOD="Cập nhật CutCut 🎬"
+          MOOD=$(echo "$MOOD" | head -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+          {
+            echo "notes<<EOF"; echo "$NOTES"; echo "EOF"
+            echo "mood<<EOF"; echo "$MOOD"; echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      # 5. Gửi thông báo bắt đầu build về Telegram Topic 2
+      - name: Send Build Started Notification
+        env:
+          MOOD: ${{ steps.notes.outputs.mood }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+          BUILDER: ${{ steps.info.outputs.builder }}
+          COUNT: ${{ steps.info.outputs.count }}
+          REF: ${{ github.ref_name }}
+        run: |
+          MSG="🎬 *Bắt đầu build: ${MOOD}*
+
+          🏷️ *Phiên bản:* ${REF}
+          👨‍💻 *Người ấn build:* ${BUILDER}
+          📦 *Số commit:* ${COUNT}
+
+          📝 *Có gì mới:*
+          ${NOTES}"
+
+          curl -s -X POST https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            --data-urlencode text="$MSG" \
             -d parse_mode="Markdown"
 
-      # 5. Cài đặt chứng chỉ Apple Certificate (.p12)
+      # 6. Cài đặt chứng chỉ Apple Certificate (.p12)
       - name: Install Apple Certificate
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -102,13 +152,13 @@ jobs:
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-      # 6. Cài đặt Provisioning Profile (.mobileprovision)
+      # 7. Cài đặt Provisioning Profile (.mobileprovision)
       - name: Install Provisioning Profile
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp source/CutCut_Prod.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/3ae93c16-bb7d-470f-86e3-73d66cce07c1.mobileprovision
 
-      # 6. Cài đặt Ruby và Bundler
+      # 8. Cài đặt Ruby và Bundler
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
@@ -116,7 +166,7 @@ jobs:
           bundler-cache: true
           working-directory: source/ios/VibeCut
 
-      # 7. Chạy Fastlane để tự động hóa build và upload lên TestFlight
+      # 9. Chạy Fastlane để tự động hóa build và upload lên TestFlight
       - name: Build & Push to TestFlight via Fastlane
         working-directory: source/ios/VibeCut
         env:
@@ -126,7 +176,7 @@ jobs:
         run: |
           bundle exec fastlane beta
 
-      # 8. Tính toán kết quả build và dung lượng file .ipa
+      # 10. Tính toán kết quả build và dung lượng file .ipa
       - name: Calculate Build Stats
         if: always()
         id: stats
@@ -147,33 +197,44 @@ jobs:
             echo "size=N/A" >> $GITHUB_OUTPUT
           fi
 
-      # 9. Gửi thông báo kết quả cuối cùng về Telegram Topic 2
+      # 11. Gửi thông báo kết quả cuối cùng về Telegram Topic 2
       - name: Send Telegram Final Notification
         if: always()
+        env:
+          MOOD: ${{ steps.notes.outputs.mood }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+          BUILDER: ${{ steps.info.outputs.builder }}
+          REF: ${{ github.ref_name }}
+          DURATION: ${{ steps.stats.outputs.duration }}
+          SIZE: ${{ steps.stats.outputs.size }}
+          STATUS: ${{ job.status }}
         run: |
-          STATUS="${{ job.status }}"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          
+
           if [ "$STATUS" = "success" ]; then
-            MSG="✅ *Build thành công rồi hàng đã có trên TestFlight!*
-            
-            🌍 *Ứng dụng:* CutCut App
-            📌 *Phiên bản:* ${{ github.ref_name }}
-            🕐 *Thời gian build:* ${{ steps.stats.outputs.duration }}
-            📦 *Dung lượng file:* ${{ steps.stats.outputs.size }}
-            👨‍💻 *Người kích hoạt:* ${{ steps.info.outputs.builder }}
-            
-            🎉 Tải ứng dụng TestFlight trên điện thoại và tận hưởng thôi!"
+            MSG="✅ *Build thành công — hàng đã có trên TestFlight!*
+
+          🎬 *${MOOD}*
+          📌 *Phiên bản:* ${REF}
+          🕐 *Thời gian build:* ${DURATION}
+          📦 *Dung lượng:* ${SIZE}
+          👨‍💻 *Người kích hoạt:* ${BUILDER}
+
+          📝 *Có gì mới:*
+          ${NOTES}
+
+          🎉 Mở TestFlight tải về tận hưởng thôi!"
           else
             MSG="❌ *Build thất bại rồi bạn hiền!*
-            
-            ⚠️ Tiến trình đóng gói hoặc tải lên TestFlight đã bị lỗi.
-            👨‍💻 *Người kích hoạt:* ${{ steps.info.outputs.builder }}
-            🔗 *Xem chi tiết lỗi tại đây:* $RUN_URL"
+
+          ⚠️ Tiến trình đóng gói hoặc tải lên TestFlight đã bị lỗi.
+          📌 *Phiên bản:* ${REF}
+          👨‍💻 *Người kích hoạt:* ${BUILDER}
+          🔗 *Xem chi tiết lỗi:* $RUN_URL"
           fi
-          
-          curl -s -X POST https://api.telegram.org/bot${{ env.TELEGRAM_BOT_TOKEN }}/sendMessage \
-            -d chat_id=${{ env.TELEGRAM_CHAT_ID }} \
-            -d message_thread_id=${{ env.TELEGRAM_TOPIC_ID }} \
-            -d text="$MSG" \
+
+          curl -s -X POST https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            --data-urlencode text="$MSG" \
             -d parse_mode="Markdown"
