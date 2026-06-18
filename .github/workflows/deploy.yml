@@ -100,7 +100,7 @@ jobs:
           }
 
           # Release notes
-          PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); nếu có mã task (VD US-1234) để đầu dòng; tập trung thay đổi chính; tối đa 10 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
+          PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG hiển thị hoặc đề cập đến bất kỳ mã task nào (như US-1234, US-xxxx); tập trung thay đổi chính; tối đa 10 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
           NOTES=$(call_groq "$PROMPT") || NOTES="- Cập nhật hệ thống và cải tiến hiệu năng."
           NOTES=$(echo "$NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
