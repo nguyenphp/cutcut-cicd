@@ -2,6 +2,11 @@ name: Deploy to TestFlight (Public Builder)
 
 on:
   workflow_dispatch: # Bấm Run workflow trên GitHub — người bấm lấy tự động từ github.actor
+    inputs:
+      committer_name:
+        description: 'Tên người kích hoạt build'
+        required: false
+        default: ''
   push:
     tags:
       - 'v*' # Tự động chạy khi bạn push tag dạng v1.0.0, v1.0.1...
@@ -41,8 +46,11 @@ jobs:
       - name: Get Build Information
         id: info
         run: |
-          # Người bấm build / push tag: luôn lấy tự động từ GitHub
-          BUILDER="${{ github.actor }}"
+          # Người bấm build / push tag: lấy từ input hoặc tự động từ GitHub
+          BUILDER="${{ github.event.inputs.committer_name }}"
+          if [ -z "$BUILDER" ]; then
+            BUILDER="${{ github.actor }}"
+          fi
           echo "builder=$BUILDER" >> $GITHUB_OUTPUT
 
           cd source
