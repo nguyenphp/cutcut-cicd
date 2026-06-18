@@ -51,7 +51,17 @@ jobs:
           if [ -z "$BUILDER" ]; then
             BUILDER="${{ github.actor }}"
           fi
+          if [ "$BUILDER" = "nguyenphp" ]; then
+            BUILDER="Nguyên Phạm - Percy"
+          fi
           echo "builder=$BUILDER" >> $GITHUB_OUTPUT
+
+          # Lấy marketing version từ project settings
+          VERSION=$(grep -m 1 "MARKETING_VERSION" source/ios/VibeCut/VibeCut.xcodeproj/project.pbxproj | awk -F'= ' '{print $2}' | tr -d ';[:space:]"')
+          if [ -z "$VERSION" ]; then
+            VERSION="1.0"
+          fi
+          echo "app_version=$VERSION" >> $GITHUB_OUTPUT
 
           cd source
           # Xác định khoảng commit kể từ tag gần nhất
@@ -122,10 +132,11 @@ jobs:
           BUILDER: ${{ steps.info.outputs.builder }}
           COUNT: ${{ steps.info.outputs.count }}
           REF: ${{ github.ref_name }}
+          APP_VERSION: ${{ steps.info.outputs.app_version }}
         run: |
           MSG="🎬 *Bắt đầu build: ${MOOD}*
 
-          🏷️ *Phiên bản:* ${REF}
+          🏷️ *Phiên bản:* ${APP_VERSION} (${REF})
           👨‍💻 *Người ấn build:* ${BUILDER}
           📦 *Số commit:* ${COUNT}
 
@@ -176,6 +187,7 @@ jobs:
 
       # 9. Chạy Fastlane để tự động hóa build và upload lên TestFlight
       - name: Build & Push to TestFlight via Fastlane
+        id: fastlane
         working-directory: source/ios/VibeCut
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -216,14 +228,24 @@ jobs:
           DURATION: ${{ steps.stats.outputs.duration }}
           SIZE: ${{ steps.stats.outputs.size }}
           STATUS: ${{ job.status }}
+          APP_VERSION: ${{ steps.fastlane.outputs.app_version }}
+          APP_BUILD: ${{ steps.fastlane.outputs.app_build }}
         run: |
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Xác định chuỗi phiên bản
+          if [ -n "$APP_VERSION" ] && [ -n "$APP_BUILD" ]; then
+            VERSION_STR="${APP_VERSION} (${APP_BUILD})"
+          else
+            # Fallback nếu không lấy được build number từ Fastlane (ví dụ: build lỗi giữa chừng)
+            VERSION_STR="${{ steps.info.outputs.app_version }} (${REF})"
+          fi
 
           if [ "$STATUS" = "success" ]; then
             MSG="✅ *Build thành công — hàng đã có trên TestFlight!*
 
           🎬 *${MOOD}*
-          📌 *Phiên bản:* ${REF}
+          📌 *Phiên bản:* ${VERSION_STR}
           🕐 *Thời gian build:* ${DURATION}
           📦 *Dung lượng:* ${SIZE}
           👨‍💻 *Người kích hoạt:* ${BUILDER}
@@ -236,7 +258,7 @@ jobs:
             MSG="❌ *Build thất bại rồi bạn hiền!*
 
           ⚠️ Tiến trình đóng gói hoặc tải lên TestFlight đã bị lỗi.
-          📌 *Phiên bản:* ${REF}
+          📌 *Phiên bản:* ${VERSION_STR}
           👨‍💻 *Người kích hoạt:* ${BUILDER}
           🔗 *Xem chi tiết lỗi:* $RUN_URL"
           fi
