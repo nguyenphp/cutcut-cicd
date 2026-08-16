@@ -175,7 +175,13 @@ jobs:
       - name: Install Provisioning Profile
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp source/CutCut_Prod.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/3ae93c16-bb7d-470f-86e3-73d66cce07c1.mobileprovision
+          for profile in source/*.mobileprovision; do
+            if [ -f "$profile" ]; then
+              UUID=$(security cms -D -i "$profile" | grep -A1 "<key>UUID</key>" | grep "<string>" | sed -E 's/<\/?string>//g' | tr -d '[:space:]')
+              echo "Installing profile $profile with UUID: $UUID"
+              cp "$profile" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+            fi
+          done
 
       # 8. Cài đặt Ruby và Bundler
       - name: Setup Ruby
