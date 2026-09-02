@@ -12,7 +12,7 @@ on:
         required: false
         default: 'all'
         type: choice
-        options: [all, ios, android]
+        options: [all, ios, android, metadata]
   push:
     tags:
       - 'v*' # Tự động chạy khi bạn push tag dạng v1.0.0, v1.0.1...
@@ -400,3 +400,41 @@ jobs:
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
             --data-urlencode text="❌ Build Android THẤT BẠI (build ${{ github.run_number }}). Xem: $RUN_URL"
+
+  deploy_metadata:
+    name: Upload App Store Metadata Only (What's New & Promo)
+    runs-on: macos-latest
+    if: github.event.inputs.platform == 'metadata'
+    steps:
+      - name: Checkout Private Source Code
+        uses: actions/checkout@v4
+        with:
+          repository: nguyenphp/vibecut
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
+          path: source
+          fetch-depth: 1
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: source/ios/VibeCut
+
+      - name: Fastlane Upload Metadata Only
+        working-directory: source/ios/VibeCut
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+        run: |
+          bundle exec fastlane metadata
+
+      - name: Notify Telegram Metadata Success
+        if: success()
+        run: |
+          curl -sS -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+            --data-urlencode text="✅ Đã upload thành công Metadata (What's New & Promotional Text) lên App Store Connect!"
