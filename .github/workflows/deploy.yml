@@ -120,7 +120,7 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.5, max_tokens:800}')
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.4, max_tokens:1500}')
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
@@ -584,7 +584,7 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.5, max_tokens:800}')
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.4, max_tokens:1500}')
             echo "=== GỬI REQUEST SANG GROQ ===" >&2
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
