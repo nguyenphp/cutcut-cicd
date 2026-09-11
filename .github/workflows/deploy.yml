@@ -22,7 +22,7 @@ env:
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   TELEGRAM_TOPIC_ID: 2 # Gửi tin nhắn vào Topic ID = 2
   GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  GROQ_MODEL: llama-3.3-70b-versatile
+  GROQ_MODEL: llama-3.1-8b-instant
 
 jobs:
   deploy:
