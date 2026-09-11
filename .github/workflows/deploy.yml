@@ -120,11 +120,15 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.7}')
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.6, max_tokens:1024, reasoning_format:"hidden"}')
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
-              echo "$response" | jq -r '.choices[0].message.content'
+              local raw_content
+              raw_content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+              if [ -n "$raw_content" ]; then
+                echo "$raw_content" | python3 -c 'import sys, re; text = sys.stdin.read(); print(re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip())'
+              fi
             else
               echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)" >&2
               return 1
@@ -580,14 +584,18 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.7}')
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.6, max_tokens:1024, reasoning_format:"hidden"}')
             echo "=== GỬI REQUEST SANG GROQ ==="
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
             echo "=== PHẢN HỒI GỐC TỪ GROQ ==="
             echo "$response"
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
-              echo "$response" | jq -r '.choices[0].message.content'
+              local raw_content
+              raw_content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+              if [ -n "$raw_content" ]; then
+                echo "$raw_content" | python3 -c 'import sys, re; text = sys.stdin.read(); print(re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip())'
+              fi
             else
               echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)" >&2
               return 1
