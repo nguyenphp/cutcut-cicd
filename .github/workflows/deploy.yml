@@ -251,6 +251,16 @@ jobs:
           bundler-cache: true
           working-directory: source/ios/VibeCut
 
+      # 8.5 Đảm bảo AppSecrets.swift tồn tại trước khi build
+      - name: Ensure AppSecrets.swift exists
+        run: |
+          if [ ! -f source/ios/VibeCut/VibeCut/App/AppSecrets.swift ]; then
+            echo "⚠️ AppSecrets.swift không tìm thấy, copy từ AppSecrets.sample.swift..."
+            cp source/ios/VibeCut/VibeCut/App/AppSecrets.sample.swift source/ios/VibeCut/VibeCut/App/AppSecrets.swift
+          else
+            echo "✅ AppSecrets.swift đã sẵn sàng."
+          fi
+
       # 9. Chạy Fastlane để tự động hóa build và upload lên TestFlight
       - name: Build & Push to TestFlight via Fastlane
         id: fastlane
