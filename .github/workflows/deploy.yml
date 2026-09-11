@@ -81,16 +81,22 @@ jobs:
             CURRENT="${{ github.ref_name }}"
             PREV=$(git describe --tags --abbrev=0 "${CURRENT}^" 2>/dev/null || echo "")
             if [[ -n "$PREV" ]]; then RANGE="$PREV..$CURRENT"; else RANGE="$CURRENT"; fi
+            COMMITS_ALL=$(git log $RANGE --no-merges --pretty=format:"- %s" 2>/dev/null || echo "")
           else
             PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-            if [[ -n "$PREV" ]]; then RANGE="$PREV..HEAD"; else RANGE="HEAD"; fi
+            if [[ -n "$PREV" ]]; then
+              RANGE="$PREV..HEAD"
+              COMMITS_ALL=$(git log $RANGE --no-merges --pretty=format:"- %s" 2>/dev/null || echo "")
+            else
+              RANGE="HEAD (top 15 commits)"
+              COMMITS_ALL=$(git log -n 15 --no-merges --pretty=format:"- %s" 2>/dev/null || echo "")
+            fi
           fi
           echo "📌 Range: $RANGE (prev tag: ${PREV:-none})"
 
-          COMMITS_ALL=$(git log $RANGE --no-merges --pretty=format:"- %s" 2>/dev/null || echo "")
           if [[ -z "$COMMITS_ALL" ]]; then COMMITS_ALL="- Cập nhật hệ thống."; fi
           COUNT=$(printf '%s\n' "$COMMITS_ALL" | grep -c '^- ' || echo 0)
-          COMMITS=$(printf '%s\n' "$COMMITS_ALL" | head -n 80)
+          COMMITS=$(printf '%s\n' "$COMMITS_ALL" | head -n 30)
 
           echo "prev_tag=${PREV:-}" >> $GITHUB_OUTPUT
           echo "count=$COUNT" >> $GITHUB_OUTPUT
@@ -109,6 +115,10 @@ jobs:
         run: |
           call_groq() {
             local prompt=$1 payload response
+            if [ -z "$GROQ_API_KEY" ]; then
+              echo "::warning::GROQ_API_KEY trống, bỏ qua gọi AI." >&2
+              return 1
+            fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
               '{model:$m, messages:[{role:"user",content:$p}], temperature:0.7}')
             response=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
@@ -116,19 +126,49 @@ jobs:
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
               echo "$response" | jq -r '.choices[0].message.content'
             else
-              echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)"
+              echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)" >&2
               return 1
             fi
           }
 
-          # Release notes
-          PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG hiển thị hoặc đề cập đến bất kỳ mã task nào (như US-1234, US-xxxx); tập trung thay đổi chính; tối đa 10 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
-          NOTES=$(call_groq "$PROMPT") || NOTES="- Cập nhật hệ thống và cải tiến hiệu năng."
+          # Thử gọi Groq sinh Release Notes
+          PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG hiển thị hoặc đề cập đến bất kỳ mã task nào (như US-1234, US-xxxx); tập trung thay đổi chính; tối đa 6 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
+          NOTES=$(call_groq "$PROMPT" 2>/dev/null) || NOTES=""
+
+          # Fallback đa tầng nếu Groq không phản hồi:
+          if [ -z "$NOTES" ] || [ "$NOTES" = "null" ]; then
+            echo "::notice::Groq không khả dụng, chuyển sang đọc commit history thực tế..."
+            if [ -f source/telegram_summary.txt ]; then
+              # Ưu tiên 1: Đọc từ telegram_summary.txt nếu có sẵn
+              NOTES=$(grep -E '^[•\-] ' source/telegram_summary.txt | head -n 6 | sed 's/^[•]/-/')
+            fi
+            if [ -z "$NOTES" ] && [ -f source/release_metadata.json ]; then
+              # Ưu tiên 2: Đọc từ release_metadata.json nếu có
+              NOTES=$(jq -r '(.recentCommits.features[:4][] // empty), (.recentCommits.fixes[:2][] // empty)' source/release_metadata.json 2>/dev/null | sed 's/^/- /')
+            fi
+            if [ -z "$NOTES" ]; then
+              # Ưu tiên 3: Lấy trực tiếp từ git log 5 commit mới nhất
+              NOTES=$(echo "$COMMITS" | head -n 5)
+            fi
+            if [ -z "$NOTES" ]; then
+              NOTES="- Cập nhật hệ thống và cải tiến hiệu năng."
+            fi
+          fi
           NOTES=$(echo "$NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-          # Build mood (tên build)
+          # Thử gọi Groq sinh Mood
           MOOD_PROMPT="Dựa trên danh sách thay đổi sau, đặt một tên tóm tắt nội dung chính chuyên nghiệp bằng tiếng Việt cho bản build CutCut này kèm emoji phù hợp (VD: 'Nâng cấp Auto Cut & Tối ưu xuất video 🚀'). Chỉ trả về duy nhất cái tên, tối đa 60 ký tự, không kèm mã task.\n\nDanh sách thay đổi:\n$COMMITS"
-          MOOD=$(call_groq "$MOOD_PROMPT") || MOOD="Cập nhật CutCut 🎬"
+          MOOD=$(call_groq "$MOOD_PROMPT" 2>/dev/null) || MOOD=""
+
+          # Fallback cho Mood nếu Groq lỗi:
+          if [ -z "$MOOD" ] || [ "$MOOD" = "null" ]; then
+            FIRST_COMMIT=$(echo "$COMMITS" | head -n 1 | sed -E 's/^-[[:space:]]*(feat|fix|refactor|perf|chore|style|bump)?(\([^\)]+\))?:?[[:space:]]*//' | cut -c 1-50)
+            if [ -n "$FIRST_COMMIT" ]; then
+              MOOD="Cập nhật: ${FIRST_COMMIT} 🚀"
+            else
+              MOOD="Cập nhật CutCut 🎬"
+            fi
+          fi
           MOOD=$(echo "$MOOD" | head -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
           {
