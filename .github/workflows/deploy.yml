@@ -121,7 +121,7 @@ jobs:
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
               '{model:$m, messages:[{role:"user",content:$p}], temperature:0.7}')
-            response=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+            response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
               echo "$response" | jq -r '.choices[0].message.content'
@@ -138,8 +138,8 @@ jobs:
           # Fallback trực tiếp từ Git Commits nếu Groq AI không phản hồi:
           if [ -z "$NOTES" ] || [ "$NOTES" = "null" ]; then
             echo "::notice::Groq không khả dụng, lấy trực tiếp git commit history làm release notes..."
-            # Lấy trực tiếp danh sách commit thực tế vừa push lên (tối đa 8 commit)
-            NOTES=$(echo "$COMMITS" | head -n 8)
+            # Lấy commit thật nhưng làm sạch tiền tố kỹ thuật (feat, fix, perf, chore...)
+            NOTES=$(echo "$COMMITS" | head -n 6 | sed -E 's/^-[[:space:]]*(feat|fix|perf|refactor|chore|style|docs|bump|test)?(\([^\)]+\))?:?[[:space:]]*/- /')
             if [ -z "$NOTES" ]; then
               NOTES="- Cập nhật hệ thống và cải tiến hiệu năng."
             fi
