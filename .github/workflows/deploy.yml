@@ -176,20 +176,38 @@ jobs:
           REF: ${{ github.ref_name }}
           APP_VERSION: ${{ steps.info.outputs.app_version }}
         run: |
-          MSG="🎬 *Bắt đầu build: ${MOOD}*
+          send_telegram() {
+            local text="$1"
+            local resp
+            resp=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d chat_id="${TELEGRAM_CHAT_ID}" \
+              -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+              --data-urlencode text="$text" \
+              -d parse_mode="Markdown")
+            if echo "$resp" | grep -q '"ok":true'; then
+              echo "✅ Đã gửi Telegram thành công."
+            else
+              echo "::warning::Gửi Markdown lỗi ($resp), gửi fallback plain text..."
+              curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                -d chat_id="${TELEGRAM_CHAT_ID}" \
+                -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+                --data-urlencode text="$text"
+            fi
+          }
+
+          SAFE_NOTES=$(echo "$NOTES" | sed 's/_/\\_/g')
+          SAFE_MOOD=$(echo "$MOOD" | sed 's/_/\\_/g')
+
+          MSG="🎬 *Bắt đầu build: ${SAFE_MOOD}*
 
           🏷️ *Phiên bản:* ${APP_VERSION} (${REF})
           👨‍💻 *Người ấn build:* ${BUILDER}
           📦 *Số commit:* ${COUNT}
 
           📝 *Có gì mới:*
-          ${NOTES}"
+          ${SAFE_NOTES}"
 
-          curl -s -X POST https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
-            --data-urlencode text="$MSG" \
-            -d parse_mode="Markdown"
+          send_telegram "$MSG"
 
       # 6. Cài đặt chứng chỉ Apple Certificate (.p12)
       - name: Install Apple Certificate
@@ -279,6 +297,25 @@ jobs:
           APP_VERSION: ${{ steps.fastlane.outputs.app_version }}
           APP_BUILD: ${{ steps.fastlane.outputs.app_build }}
         run: |
+          send_telegram() {
+            local text="$1"
+            local resp
+            resp=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d chat_id="${TELEGRAM_CHAT_ID}" \
+              -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+              --data-urlencode text="$text" \
+              -d parse_mode="Markdown")
+            if echo "$resp" | grep -q '"ok":true'; then
+              echo "✅ Đã gửi Telegram thành công."
+            else
+              echo "::warning::Gửi Markdown lỗi ($resp), gửi fallback plain text..."
+              curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                -d chat_id="${TELEGRAM_CHAT_ID}" \
+                -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
+                --data-urlencode text="$text"
+            fi
+          }
+
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           # Xác định chuỗi phiên bản
@@ -289,17 +326,20 @@ jobs:
             VERSION_STR="${{ steps.info.outputs.app_version }} (${REF})"
           fi
 
+          SAFE_NOTES=$(echo "$NOTES" | sed 's/_/\\_/g')
+          SAFE_MOOD=$(echo "$MOOD" | sed 's/_/\\_/g')
+
           if [ "$STATUS" = "success" ]; then
             MSG="✅ *Build thành công — hàng đã có trên TestFlight!*
 
-          🎬 *${MOOD}*
+          🎬 *${SAFE_MOOD}*
           📌 *Phiên bản:* ${VERSION_STR}
           🕐 *Thời gian build:* ${DURATION}
           📦 *Dung lượng:* ${SIZE}
           👨‍💻 *Người kích hoạt:* ${BUILDER}
 
           📝 *Có gì mới:*
-          ${NOTES}
+          ${SAFE_NOTES}
 
           🎉 Mở TestFlight tải về tận hưởng thôi!"
           else
@@ -311,11 +351,7 @@ jobs:
           🔗 *Xem chi tiết lỗi:* $RUN_URL"
           fi
 
-          curl -s -X POST https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
-            --data-urlencode text="$MSG" \
-            -d parse_mode="Markdown"
+          send_telegram "$MSG"
 
   # ==========================================================================
   # ANDROID — chạy SONG SONG job iOS. ubuntu-latest rẻ và nhanh hơn macOS nhiều,
