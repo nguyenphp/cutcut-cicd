@@ -22,7 +22,7 @@ env:
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   TELEGRAM_TOPIC_ID: 2 # Gửi tin nhắn vào Topic ID = 2
   GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  GROQ_MODEL: llama-3.1-8b-instant
+  GROQ_MODEL: qwen/qwen3.6-27b
 
 jobs:
   deploy:
@@ -132,7 +132,7 @@ jobs:
           }
 
           # Thử gọi Groq sinh Release Notes
-          PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG hiển thị hoặc đề cập đến bất kỳ mã task nào (như US-1234, US-xxxx); tập trung thay đổi chính; tối đa 6 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
+          PROMPT="Bạn là chuyên gia truyền thông ứng dụng CutCut (trình chỉnh sửa video). Hãy đọc các commit kỹ thuật sau đây và viết lại thành bản tóm tắt 'Có gì mới' bằng TIẾNG VIỆT tự nhiên, dễ hiểu, thân thiện cho người dùng cuối. Quy tắc: Mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG dùng từ ngữ lập trình thô ráp (như commit, refactor, compress png, dsym, branch...); hãy diễn giải thành lợi ích người dùng (Ví dụ: tối ưu dung lượng app nhẹ hơn, mở app nhanh hơn, trải nghiệm mượt mà hơn); tối đa 5-6 dòng, mỗi dòng ngắn gọn dưới 80 ký tự.\n\nDanh sách thay đổi:\n$COMMITS"
           NOTES=$(call_groq "$PROMPT") || NOTES=""
 
           # Fallback trực tiếp từ Git Commits nếu Groq AI không phản hồi:
@@ -147,7 +147,7 @@ jobs:
           NOTES=$(echo "$NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
           # Thử gọi Groq sinh Mood
-          MOOD_PROMPT="Dựa trên danh sách thay đổi sau, đặt một tên tóm tắt nội dung chính chuyên nghiệp bằng tiếng Việt cho bản build CutCut này kèm emoji phù hợp (VD: 'Nâng cấp Auto Cut & Tối ưu xuất video 🚀'). Chỉ trả về duy nhất cái tên, tối đa 60 ký tự, không kèm mã task.\n\nDanh sách thay đổi:\n$COMMITS"
+          MOOD_PROMPT="Dựa trên danh sách thay đổi sau, đặt một tiêu đề ngắn gọn (dưới 45 ký tự) bằng tiếng Việt thật kêu và hào hứng cho bản cập nhật CutCut này, kèm 1-2 emoji phù hợp (VD: 'Siêu Tối Ưu Dung Lượng & Khởi Động Nhanh 🚀'). Chỉ trả về duy nhất tiêu đề, không kèm mã task hay lời dẫn.\n\nDanh sách thay đổi:\n$COMMITS"
           MOOD=$(call_groq "$MOOD_PROMPT") || MOOD=""
 
           # Fallback cho Mood nếu Groq lỗi:
@@ -594,7 +594,7 @@ jobs:
             fi
           }
 
-          PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG hiển thị hoặc đề cập đến bất kỳ mã task nào (như US-1234, US-xxxx); tập trung thay đổi chính; tối đa 6 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
+          PROMPT="Bạn là chuyên gia truyền thông ứng dụng CutCut (trình chỉnh sửa video). Hãy đọc các commit kỹ thuật sau đây và viết lại thành bản tóm tắt 'Có gì mới' bằng TIẾNG VIỆT tự nhiên, dễ hiểu, thân thiện cho người dùng cuối. Quy tắc: Mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG dùng từ ngữ lập trình thô ráp (như commit, refactor, compress png, dsym, branch...); hãy diễn giải thành lợi ích người dùng (Ví dụ: tối ưu dung lượng app nhẹ hơn, mở app nhanh hơn, trải nghiệm mượt mà hơn); tối đa 5-6 dòng, mỗi dòng ngắn gọn dưới 80 ký tự.\n\nDanh sách thay đổi:\n$COMMITS"
           NOTES=$(call_groq "$PROMPT") || NOTES=""
 
           if [ -z "$NOTES" ] || [ "$NOTES" = "null" ]; then
@@ -606,7 +606,7 @@ jobs:
           fi
           NOTES=$(echo "$NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-          MOOD_PROMPT="Dựa trên danh sách thay đổi sau, đặt một tên tóm tắt nội dung chính chuyên nghiệp bằng tiếng Việt cho bản build CutCut này kèm emoji phù hợp (VD: 'Nâng cấp Auto Cut & Tối ưu xuất video 🚀'). Chỉ trả về duy nhất cái tên, tối đa 60 ký tự, không kèm mã task.\n\nDanh sách thay đổi:\n$COMMITS"
+          MOOD_PROMPT="Dựa trên danh sách thay đổi sau, đặt một tiêu đề ngắn gọn (dưới 45 ký tự) bằng tiếng Việt thật kêu và hào hứng cho bản cập nhật CutCut này, kèm 1-2 emoji phù hợp (VD: 'Siêu Tối Ưu Dung Lượng & Khởi Động Nhanh 🚀'). Chỉ trả về duy nhất tiêu đề, không kèm mã task hay lời dẫn.\n\nDanh sách thay đổi:\n$COMMITS"
           MOOD=$(call_groq "$MOOD_PROMPT") || MOOD=""
 
           if [ -z "$MOOD" ] || [ "$MOOD" = "null" ]; then
