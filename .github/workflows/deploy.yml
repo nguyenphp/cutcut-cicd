@@ -133,7 +133,7 @@ jobs:
 
           # Thử gọi Groq sinh Release Notes
           PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG hiển thị hoặc đề cập đến bất kỳ mã task nào (như US-1234, US-xxxx); tập trung thay đổi chính; tối đa 6 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
-          NOTES=$(call_groq "$PROMPT" 2>/dev/null) || NOTES=""
+          NOTES=$(call_groq "$PROMPT") || NOTES=""
 
           # Fallback trực tiếp từ Git Commits nếu Groq AI không phản hồi:
           if [ -z "$NOTES" ] || [ "$NOTES" = "null" ]; then
@@ -148,7 +148,7 @@ jobs:
 
           # Thử gọi Groq sinh Mood
           MOOD_PROMPT="Dựa trên danh sách thay đổi sau, đặt một tên tóm tắt nội dung chính chuyên nghiệp bằng tiếng Việt cho bản build CutCut này kèm emoji phù hợp (VD: 'Nâng cấp Auto Cut & Tối ưu xuất video 🚀'). Chỉ trả về duy nhất cái tên, tối đa 60 ký tự, không kèm mã task.\n\nDanh sách thay đổi:\n$COMMITS"
-          MOOD=$(call_groq "$MOOD_PROMPT" 2>/dev/null) || MOOD=""
+          MOOD=$(call_groq "$MOOD_PROMPT") || MOOD=""
 
           # Fallback cho Mood nếu Groq lỗi:
           if [ -z "$MOOD" ] || [ "$MOOD" = "null" ]; then
