@@ -562,6 +562,11 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
+      - name: List Available Groq Models
+        run: |
+          echo "=== DANH SÁCH MODEL KHẢ DỤNG TRÊN TÀI KHOẢN GROQ ==="
+          curl -s -H "Authorization: Bearer $GROQ_API_KEY" https://api.groq.com/openai/v1/models | jq .
+
       - name: Generate Release Notes & Mood (Groq)
         id: notes
         env:
