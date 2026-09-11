@@ -135,21 +135,11 @@ jobs:
           PROMPT="Bạn là AI chuyên nghiệp. Viết bản tóm tắt 'Tính năng mới & Cập nhật' cho bản $REF_NAME của app CutCut (trình chỉnh sửa video iOS) bằng tiếng Việt, ngắn gọn súc tích. Yêu cầu: mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG hiển thị hoặc đề cập đến bất kỳ mã task nào (như US-1234, US-xxxx); tập trung thay đổi chính; tối đa 6 dòng, mỗi dòng dưới 100 ký tự; không nhắc commit hash hay mã nguồn; không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
           NOTES=$(call_groq "$PROMPT" 2>/dev/null) || NOTES=""
 
-          # Fallback đa tầng nếu Groq không phản hồi:
+          # Fallback trực tiếp từ Git Commits nếu Groq AI không phản hồi:
           if [ -z "$NOTES" ] || [ "$NOTES" = "null" ]; then
-            echo "::notice::Groq không khả dụng, chuyển sang đọc commit history thực tế..."
-            if [ -f source/telegram_summary.txt ]; then
-              # Ưu tiên 1: Đọc từ telegram_summary.txt nếu có sẵn
-              NOTES=$(grep -E '^[•\-] ' source/telegram_summary.txt | head -n 6 | sed 's/^[•]/-/')
-            fi
-            if [ -z "$NOTES" ] && [ -f source/release_metadata.json ]; then
-              # Ưu tiên 2: Đọc từ release_metadata.json nếu có
-              NOTES=$(jq -r '(.recentCommits.features[:4][] // empty), (.recentCommits.fixes[:2][] // empty)' source/release_metadata.json 2>/dev/null | sed 's/^/- /')
-            fi
-            if [ -z "$NOTES" ]; then
-              # Ưu tiên 3: Lấy trực tiếp từ git log 5 commit mới nhất
-              NOTES=$(echo "$COMMITS" | head -n 5)
-            fi
+            echo "::notice::Groq không khả dụng, lấy trực tiếp git commit history làm release notes..."
+            # Lấy trực tiếp danh sách commit thực tế vừa push lên (tối đa 8 commit)
+            NOTES=$(echo "$COMMITS" | head -n 8)
             if [ -z "$NOTES" ]; then
               NOTES="- Cập nhật hệ thống và cải tiến hiệu năng."
             fi
