@@ -22,7 +22,7 @@ env:
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   TELEGRAM_TOPIC_ID: 2 # Gửi tin nhắn vào Topic ID = 2
   GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  GROQ_MODEL: qwen/qwen3.6-27b
+  GROQ_MODEL: openai/gpt-oss-120b
 
 jobs:
   deploy:
@@ -120,7 +120,7 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.6, max_tokens:1024, reasoning_format:"hidden"}')
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.5, max_tokens:800}')
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
@@ -584,12 +584,12 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.6, max_tokens:1024, reasoning_format:"hidden"}')
-            echo "=== GỬI REQUEST SANG GROQ ==="
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.5, max_tokens:800}')
+            echo "=== GỬI REQUEST SANG GROQ ===" >&2
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
-            echo "=== PHẢN HỒI GỐC TỪ GROQ ==="
-            echo "$response"
+            echo "=== PHẢN HỒI GỐC TỪ GROQ ===" >&2
+            echo "$response" >&2
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
               local raw_content
               raw_content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
