@@ -120,14 +120,28 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.4, max_tokens:1500}')
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.4, max_tokens:4096}')
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
             if echo "$response" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
               local raw_content
               raw_content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
               if [ -n "$raw_content" ]; then
-                echo "$raw_content" | python3 -c 'import sys, re; text = sys.stdin.read(); print(re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip())'
+                echo "$raw_content" | python3 -c '
+import sys, re
+text = sys.stdin.read()
+text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+lines = [l.strip() for l in text.splitlines() if l.strip()]
+valid = []
+for l in lines:
+    if l.startswith("-") or l.startswith("•") or l.startswith("*"):
+        valid.append(l)
+    elif valid:
+        valid[-1] += " " + l
+if valid and not re.search(r"[.!?\)\]\x22\x27\xBB\u201D]$", valid[-1]):
+    valid.pop()
+print("\n".join(valid) if valid else text)
+'
               fi
             else
               echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)" >&2
@@ -136,7 +150,7 @@ jobs:
           }
 
           # Thử gọi Groq sinh Release Notes
-          PROMPT="Bạn là chuyên gia truyền thông ứng dụng CutCut (trình chỉnh sửa video). Hãy đọc các commit kỹ thuật sau đây và viết lại thành bản tóm tắt 'Có gì mới' bằng TIẾNG VIỆT tự nhiên, dễ hiểu, thân thiện cho người dùng cuối. Quy tắc: Mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG dùng từ ngữ lập trình thô ráp (như commit, refactor, compress png, dsym, branch...); hãy diễn giải thành lợi ích người dùng (Ví dụ: tối ưu dung lượng app nhẹ hơn, mở app nhanh hơn, trải nghiệm mượt mà hơn); tối đa 5-6 dòng, mỗi dòng ngắn gọn dưới 80 ký tự.\n\nDanh sách thay đổi:\n$COMMITS"
+          PROMPT="Bạn là chuyên gia truyền thông ứng dụng CutCut (trình chỉnh sửa video). Hãy đọc các commit kỹ thuật sau đây và viết lại thành bản tóm tắt 'Có gì mới' bằng TIẾNG VIỆT tự nhiên, dễ hiểu, thân thiện cho người dùng cuối. Quy tắc: Mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG dùng từ ngữ lập trình thô ráp (như commit, refactor, compress png, dsym, branch...); hãy diễn giải thành lợi ích người dùng (Ví dụ: tối ưu dung lượng app nhẹ hơn, mở app nhanh hơn, trải nghiệm mượt mà hơn); tối đa 5-6 dòng, mỗi dòng ngắn gọn dưới 80 ký tự; hoàn thiện trọn vẹn từng câu với dấu chấm kết thúc, tuyệt đối không ngắt câu lửng lơ.\n\nDanh sách thay đổi:\n$COMMITS"
           NOTES=$(call_groq "$PROMPT") || NOTES=""
 
           # Fallback trực tiếp từ Git Commits nếu Groq AI không phản hồi:
@@ -584,7 +598,7 @@ jobs:
               return 1
             fi
             payload=$(jq -n --arg m "$GROQ_MODEL" --arg p "$prompt" \
-              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.4, max_tokens:1500}')
+              '{model:$m, messages:[{role:"user",content:$p}], temperature:0.4, max_tokens:4096}')
             echo "=== GỬI REQUEST SANG GROQ ===" >&2
             response=$(curl -s --connect-timeout 10 --max-time 30 --retry 2 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d "$payload")
@@ -594,7 +608,21 @@ jobs:
               local raw_content
               raw_content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
               if [ -n "$raw_content" ]; then
-                echo "$raw_content" | python3 -c 'import sys, re; text = sys.stdin.read(); print(re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip())'
+                echo "$raw_content" | python3 -c '
+import sys, re
+text = sys.stdin.read()
+text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+lines = [l.strip() for l in text.splitlines() if l.strip()]
+valid = []
+for l in lines:
+    if l.startswith("-") or l.startswith("•") or l.startswith("*"):
+        valid.append(l)
+    elif valid:
+        valid[-1] += " " + l
+if valid and not re.search(r"[.!?\)\]\x22\x27\xBB\u201D]$", valid[-1]):
+    valid.pop()
+print("\n".join(valid) if valid else text)
+'
               fi
             else
               echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)" >&2
@@ -602,7 +630,7 @@ jobs:
             fi
           }
 
-          PROMPT="Bạn là chuyên gia truyền thông ứng dụng CutCut (trình chỉnh sửa video). Hãy đọc các commit kỹ thuật sau đây và viết lại thành bản tóm tắt 'Có gì mới' bằng TIẾNG VIỆT tự nhiên, dễ hiểu, thân thiện cho người dùng cuối. Quy tắc: Mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG dùng từ ngữ lập trình thô ráp (như commit, refactor, compress png, dsym, branch...); hãy diễn giải thành lợi ích người dùng (Ví dụ: tối ưu dung lượng app nhẹ hơn, mở app nhanh hơn, trải nghiệm mượt mà hơn); tối đa 5-6 dòng, mỗi dòng ngắn gọn dưới 80 ký tự.\n\nDanh sách thay đổi:\n$COMMITS"
+          PROMPT="Bạn là chuyên gia truyền thông ứng dụng CutCut (trình chỉnh sửa video). Hãy đọc các commit kỹ thuật sau đây và viết lại thành bản tóm tắt 'Có gì mới' bằng TIẾNG VIỆT tự nhiên, dễ hiểu, thân thiện cho người dùng cuối. Quy tắc: Mỗi dòng bắt đầu bằng dấu gạch (-); KHÔNG dùng từ ngữ lập trình thô ráp (như commit, refactor, compress png, dsym, branch...); hãy diễn giải thành lợi ích người dùng (Ví dụ: tối ưu dung lượng app nhẹ hơn, mở app nhanh hơn, trải nghiệm mượt mà hơn); tối đa 5-6 dòng, mỗi dòng ngắn gọn dưới 80 ký tự; hoàn thiện trọn vẹn từng câu với dấu chấm kết thúc, tuyệt đối không ngắt câu lửng lơ.\n\nDanh sách thay đổi:\n$COMMITS"
           NOTES=$(call_groq "$PROMPT") || NOTES=""
 
           if [ -z "$NOTES" ] || [ "$NOTES" = "null" ]; then
