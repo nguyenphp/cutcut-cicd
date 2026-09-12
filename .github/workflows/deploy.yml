@@ -127,21 +127,7 @@ jobs:
               local raw_content
               raw_content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
               if [ -n "$raw_content" ]; then
-                echo "$raw_content" | python3 -c '
-import sys, re
-text = sys.stdin.read()
-text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-lines = [l.strip() for l in text.splitlines() if l.strip()]
-valid = []
-for l in lines:
-    if l.startswith("-") or l.startswith("•") or l.startswith("*"):
-        valid.append(l)
-    elif valid:
-        valid[-1] += " " + l
-if valid and not re.search(r"[.!?\)\]\x22\x27\xBB\u201D]$", valid[-1]):
-    valid.pop()
-print("\n".join(valid) if valid else text)
-'
+                echo "$raw_content" | python3 -c 'import sys, re; text = re.sub(r"<think>.*?</think>", "", sys.stdin.read(), flags=re.DOTALL).strip(); lines = [l.strip() for l in text.splitlines() if l.strip()]; valid = []; [valid.append(l) if (l.startswith("-") or l.startswith("•") or l.startswith("*")) else (valid and valid.__setitem__(-1, valid[-1] + " " + l)) for l in lines]; (valid and not re.search(r"[.!?\)\]\"\x27\u201D]$", valid[-1]) and valid.pop()); print("\n".join(valid) if valid else text)'
               fi
             else
               echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)" >&2
@@ -608,21 +594,7 @@ print("\n".join(valid) if valid else text)
               local raw_content
               raw_content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
               if [ -n "$raw_content" ]; then
-                echo "$raw_content" | python3 -c '
-import sys, re
-text = sys.stdin.read()
-text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-lines = [l.strip() for l in text.splitlines() if l.strip()]
-valid = []
-for l in lines:
-    if l.startswith("-") or l.startswith("•") or l.startswith("*"):
-        valid.append(l)
-    elif valid:
-        valid[-1] += " " + l
-if valid and not re.search(r"[.!?\)\]\x22\x27\xBB\u201D]$", valid[-1]):
-    valid.pop()
-print("\n".join(valid) if valid else text)
-'
+                echo "$raw_content" | python3 -c 'import sys, re; text = re.sub(r"<think>.*?</think>", "", sys.stdin.read(), flags=re.DOTALL).strip(); lines = [l.strip() for l in text.splitlines() if l.strip()]; valid = []; [valid.append(l) if (l.startswith("-") or l.startswith("•") or l.startswith("*")) else (valid and valid.__setitem__(-1, valid[-1] + " " + l)) for l in lines]; (valid and not re.search(r"[.!?\)\]\"\x27\u201D]$", valid[-1]) and valid.pop()); print("\n".join(valid) if valid else text)'
               fi
             else
               echo "::warning::Groq lỗi: $(echo "$response" | jq -r '.error.message // "unknown"' 2>/dev/null)" >&2
