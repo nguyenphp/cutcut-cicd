@@ -491,11 +491,13 @@ jobs:
           done
           echo "Diawi xử lý quá lâu"; exit 1
 
-      - name: Upload AAB (Google Play)
+      # APK + AAB đặt tên chuẩn trong 1 gói tải về (gửi publisher / đẩy Play).
+      - name: Upload APK + AAB
         uses: actions/upload-artifact@v4
         with:
-          name: cutcut-android-aab-${{ steps.info.outputs.app_version }}-${{ github.run_number }}
-          path: source/android/app/build/outputs/dist/*.aab
+          name: cutcut-android-${{ steps.info.outputs.app_version }}-${{ github.run_number }}
+          path: source/android/app/build/outputs/dist/*
+          compression-level: 0
 
       # Telegram chỉ báo link (không gửi file): App Distribution + Diawi + trang tải AAB.
       - name: Notify Telegram
@@ -509,7 +511,7 @@ jobs:
           🔗 Diawi Link: <a href=\"${{ steps.diawi.outputs.url }}\">Cài đặt trực tiếp qua Diawi</a>
           📷 Mã QR: <a href=\"${{ steps.diawi.outputs.qr }}\">Quét để tải nhanh</a>"
           MSG="$MSG
-          📦 AAB (Google Play): <a href=\"$RUN_URL\">Tải ở mục Artifacts</a>"
+          📦 APK + AAB: <a href=\"$RUN_URL\">Tải ở mục Artifacts</a>"
           curl -sS -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
