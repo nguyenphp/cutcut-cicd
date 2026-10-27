@@ -377,6 +377,7 @@ jobs:
     env:
       # Ở mức job để `if:` của bước App Distribution đọc được (env của chính bước thì không).
       FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SA_JSON }}
+      DIAWI_TOKEN: ${{ secrets.DIAWI_TOKEN }}
     if: >
       github.event_name != 'workflow_dispatch' ||
       github.event.inputs.platform == 'all' ||
@@ -454,6 +455,7 @@ jobs:
 
       # Firebase App Distribution: chỉ APK (AAB tự tải artifact đẩy Play). Chưa có secret thì bỏ qua.
       - name: Upload Firebase App Distribution
+        id: fad
         if: env.FIREBASE_SA_JSON != ''
         run: |
           printf '%s' "$FIREBASE_SA_JSON" > $RUNNER_TEMP/firebase-sa.json
@@ -461,7 +463,29 @@ jobs:
           npx -y firebase-tools@13 appdistribution:distribute "${{ steps.apk.outputs.path }}" \
             --app 1:182594279355:android:e3bf73785aa806686f569e \
             --groups "testers" \
-            --release-notes "CutCut ${{ steps.info.outputs.app_version }} (build ${{ github.run_number }}) — ${{ steps.info.outputs.builder }}"
+            --release-notes "CutCut ${{ steps.info.outputs.app_version }} (build ${{ github.run_number }}) — ${{ steps.info.outputs.builder }}" \
+            | tee $RUNNER_TEMP/fad.log
+          echo "url=$(grep -o 'https://appdistribution.firebase.google.com/testerapps/[^ ]*' $RUNNER_TEMP/fad.log | head -1)" >> $GITHUB_OUTPUT
+
+      # Diawi: link cài trực tiếp. Chưa có secret DIAWI_TOKEN thì bỏ qua; lỗi (vd vượt giới hạn
+      # dung lượng gói Diawi) không làm đỏ build — tin Telegram vẫn có link App Distribution.
+      - name: Upload Diawi
+        id: diawi
+        if: env.DIAWI_TOKEN != ''
+        continue-on-error: true
+        run: |
+          JOB=$(curl -sS https://upload.diawi.com/ -F token="$DIAWI_TOKEN" \
+            -F file=@"${{ steps.apk.outputs.path }}" \
+            -F comment="CutCut Android ${{ steps.info.outputs.app_version }} (build ${{ github.run_number }})" | jq -r .job)
+          [ -n "$JOB" ] && [ "$JOB" != "null" ] || { echo "Diawi không nhận file"; exit 1; }
+          for i in $(seq 1 60); do
+            R=$(curl -sS "https://upload.diawi.com/status?token=$DIAWI_TOKEN&job=$JOB")
+            ST=$(echo "$R" | jq -r .status)
+            if [ "$ST" = "2000" ]; then echo "url=$(echo "$R" | jq -r .link)" >> $GITHUB_OUTPUT; exit 0; fi
+            if [ "$ST" != "2001" ]; then echo "Diawi lỗi: $R"; exit 1; fi
+            sleep 5
+          done
+          echo "Diawi xử lý quá lâu"; exit 1
 
       - name: Upload AAB (Google Play)
         uses: actions/upload-artifact@v4
@@ -469,35 +493,23 @@ jobs:
           name: cutcut-android-aab-${{ steps.info.outputs.app_version }}-${{ github.run_number }}
           path: source/android/app/build/outputs/dist/*.aab
 
-      # Bot Telegram giới hạn 50MB. Vượt thì đẩy artifact + gửi link, đừng để CI
-      # xanh mà không ai nhận được file. fromJSON để so SỐ (outputs luôn là string).
-      - name: Upload APK as artifact (khi > 50MB)
-        if: fromJSON(steps.apk.outputs.size_mb) >= 49
-        uses: actions/upload-artifact@v4
-        with:
-          name: cutcut-android-${{ steps.info.outputs.app_version }}-${{ github.run_number }}
-          path: ${{ steps.apk.outputs.path }}
-
-      - name: Notify Telegram (gửi file APK)
-        if: fromJSON(steps.apk.outputs.size_mb) < 49
+      # Telegram chỉ báo link (không gửi file): App Distribution + Diawi + trang tải AAB.
+      - name: Notify Telegram
         run: |
           ELAPSED=$(( $(date +%s) - JOB_START_TIME ))
-          curl -sS -X POST \
-            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-            -F "chat_id=${TELEGRAM_CHAT_ID}" \
-            -F "message_thread_id=${TELEGRAM_TOPIC_ID}" \
-            -F "document=@${{ steps.apk.outputs.path }}" \
-            -F "caption=🤖 CutCut Android ${{ steps.info.outputs.app_version }} (build ${{ github.run_number }}) — ${{ steps.info.outputs.builder }} — ${ELAPSED}s"
-
-      - name: Notify Telegram (gửi link khi APK quá lớn)
-        if: fromJSON(steps.apk.outputs.size_mb) >= 49
-        run: |
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG="🤖 CutCut Android ${{ steps.info.outputs.app_version }} (build ${{ github.run_number }}) — ${{ steps.info.outputs.builder }} — ${ELAPSED}s"
+          [ -n "${{ steps.fad.outputs.url }}" ] && MSG="$MSG
+          📲 App Distribution: ${{ steps.fad.outputs.url }}"
+          [ -n "${{ steps.diawi.outputs.url }}" ] && MSG="$MSG
+          🔗 Diawi: ${{ steps.diawi.outputs.url }}"
+          MSG="$MSG
+          📦 AAB (Play): $RUN_URL"
           curl -sS -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
             -d message_thread_id="${TELEGRAM_TOPIC_ID}" \
-            --data-urlencode text="🤖 CutCut Android ${{ steps.info.outputs.app_version }} (build ${{ github.run_number }}) — APK ${{ steps.apk.outputs.size_mb }}MB vượt giới hạn Telegram. Tải ở: $RUN_URL"
+            --data-urlencode text="$MSG"
 
       - name: Notify Telegram on failure
         if: failure()
