@@ -468,9 +468,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cutcut-android-aab-${{ steps.info.outputs.app_version }}-${{ github.run_number }}
-          path: |
-            source/android/app/build/outputs/dist/*
-            source/android/app/build/outputs/bundle/release/*.aab
+          path: source/android/app/build/outputs/dist/*.aab
 
       # Bot Telegram giới hạn 50MB. Vượt thì đẩy artifact + gửi link, đừng để CI
       # xanh mà không ai nhận được file. fromJSON để so SỐ (outputs luôn là string).
