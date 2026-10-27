@@ -421,6 +421,11 @@ jobs:
 
       - name: Build Release APK
         working-directory: source/android
+        env:
+          # Thư viện nội bộ Tevo (Nexus). Secret trống thì settings.gradle.kts bỏ qua repo này.
+          ORG_GRADLE_PROJECT_tevoNexusMavenUrl: ${{ secrets.TEVO_NEXUS_MAVEN_URL }}
+          ORG_GRADLE_PROJECT_tevoNexusUsername: ${{ secrets.TEVO_NEXUS_USERNAME }}
+          ORG_GRADLE_PROJECT_tevoNexusPassword: ${{ secrets.TEVO_NEXUS_PASSWORD }}
         run: |
           chmod +x ./gradlew
           # AAB cho Google Play (Play chỉ nhận .aab); APK vẫn gửi Telegram để cài thử.
@@ -436,7 +441,9 @@ jobs:
       - name: Locate APK
         id: apk
         run: |
-          APK=$(find source/android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          # Ưu tiên bản đặt tên theo quy ước publisher: <package>_<versionName>_<versionCode>_<YYYYMMDD>_<hhmm>.apk
+          APK=$(find source/android/app/build/outputs/dist -name "*.apk" 2>/dev/null | head -1)
+          [ -z "$APK" ] && APK=$(find source/android/app/build/outputs/apk/release -name "*.apk" | head -1)
           if [ -z "$APK" ]; then echo "không tìm thấy APK"; exit 1; fi
           SIZE_MB=$(( $(stat -c%s "$APK") / 1048576 ))
           echo "path=$APK" >> $GITHUB_OUTPUT
@@ -447,7 +454,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cutcut-android-aab-${{ steps.info.outputs.app_version }}-${{ github.run_number }}
-          path: source/android/app/build/outputs/bundle/release/*.aab
+          path: |
+            source/android/app/build/outputs/dist/*
+            source/android/app/build/outputs/bundle/release/*.aab
 
       # Bot Telegram giới hạn 50MB. Vượt thì đẩy artifact + gửi link, đừng để CI
       # xanh mà không ai nhận được file. fromJSON để so SỐ (outputs luôn là string).
