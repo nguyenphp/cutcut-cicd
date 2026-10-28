@@ -430,6 +430,14 @@ jobs:
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/release.jks
           ls -la $RUNNER_TEMP/release.jks
 
+      # Firebase (Analytics/FCM/Remote Config/Crashlytics): google-services.json bị gitignore → lấy từ secret.
+      # Thiếu file thì build.gradle.kts bỏ plugin google-services → app chạy KHÔNG có Firebase (bản 1.0.0(2) đã dính).
+      - name: Decode google-services.json
+        run: |
+          if [ -z "${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_BASE64 }}" ]; then echo "::error::Thiếu secret ANDROID_GOOGLE_SERVICES_JSON_BASE64"; exit 1; fi
+          echo "${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > source/android/app/google-services.json
+          grep -q '"project_id"' source/android/app/google-services.json
+
       - name: Build Release APK
         working-directory: source/android
         env:
